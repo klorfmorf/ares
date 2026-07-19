@@ -43,9 +43,6 @@ private:
   auto initialize() -> bool;
   auto terminate() -> void;
 
-  auto updateResampleChannels(u32 channels) -> void;
-  auto updateResampleFrequency(u32 frequency) -> void;
-
   bool _ready = false;
   bool _blocking = false;
   bool _dynamic = false;
@@ -62,6 +59,4 @@ private:
   string _device = "Default";
 
   std::vector<string> _devices;
-  std::vector<nall::DSP::Resampler::Cubic> _resamplers;
-  std::vector<f64> _resampleBuffer;
 };

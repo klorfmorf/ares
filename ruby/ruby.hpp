@@ -18,7 +18,6 @@
 #include <memory>
 #include <vector>
 #include <ranges>
-#include <nall/dsp/resampler/cubic.hpp>
 #include <nall/hash/crc16.hpp>
 #include <nall/hash/crc32.hpp>
 

@@ -1,3 +1,4 @@
+#include <CDSPResampler.h>
 #include <ares/ares.hpp>
 #include <ares/debug/debug.cpp>
 #include <nall/gdb/server.cpp>

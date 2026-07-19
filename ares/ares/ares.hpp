@@ -37,7 +37,6 @@
 #include <nall/cd.hpp>
 #include <nall/dsp/iir/one-pole.hpp>
 #include <nall/dsp/iir/biquad.hpp>
-#include <nall/dsp/resampler/cubic.hpp>
 #include <nall/hash/crc32.hpp>
 #include <nall/hash/sha256.hpp>
 using namespace nall;

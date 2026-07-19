@@ -1,6 +1,33 @@
+struct Stream::Resampler {
+  Resampler(f64 inputFrequency, f64 outputFrequency, u32 maxInputSize)
+  : instance(inputFrequency, outputFrequency, maxInputSize) {
+  }
+
+  auto maxOutputSize(u32 inputSize) const -> u32 {
+    return instance.getMaxOutLen(inputSize);
+  }
+
+  auto process(f64 input[], u32 inputSize, f64*& output) -> u32 {
+    return instance.process(input, inputSize, output);
+  }
+
+private:
+  r8b::CDSPResampler16 instance;
+};
+
+auto Stream::ResamplerDeleter::operator()(Resampler* resampler) const -> void {
+  delete resampler;
+}
+
+auto Stream::Channel::write(f64 sample) -> void {
+  if(output.full()) output.read();
+  output.write(sample);
+}
+
 auto Stream::setChannels(u32 channels) -> void {
   _channels.clear();
   _channels.resize(channels);
+  setResamplerFrequency(_resamplerFrequency);
 }
 
 auto Stream::setFrequency(f64 frequency) -> void {
@@ -10,24 +37,21 @@ auto Stream::setFrequency(f64 frequency) -> void {
 
 auto Stream::setResamplerFrequency(f64 resamplerFrequency) -> void {
   _resamplerFrequency = resamplerFrequency;
+  _resamplerBlockSize = std::clamp((u32)ceil(_frequency / 1000.0), 16u, 4096u);
+  _resamplerInputSize = 0;
 
   for(auto& channel : _channels) {
-    channel.nyquist.clear();
-    channel.resampler.reset(_frequency, _resamplerFrequency);
-  }
+    channel.input.resize(_resamplerBlockSize);
+    channel.resampler.reset();
 
-  if(_frequency >= _resamplerFrequency * 2) {
-    //add a low-pass filter to prevent aliasing during resampling
-    f64 cutoffFrequency = min(25000.0, _resamplerFrequency / 2.0 - 2000.0);
-    for(auto& channel : _channels) {
-      u32 passes = 3;
-      for(u32 pass : range(passes)) {
-        DSP::IIR::Biquad filter;
-        f64 q = DSP::IIR::Biquad::butterworth(passes * 2, pass);
-        filter.reset(DSP::IIR::Biquad::Type::LowPass, cutoffFrequency, _frequency, q);
-        channel.nyquist.push_back(filter);
-      }
+    u32 outputQueueSize = max(1u, (u32)ceil(_resamplerFrequency * 0.05));
+    if(_frequency != _resamplerFrequency) {
+      channel.resampler.reset(new Resampler(
+        _frequency, _resamplerFrequency, _resamplerBlockSize
+      ));
+      outputQueueSize = max(outputQueueSize, channel.resampler->maxOutputSize(_resamplerBlockSize) * 2);
     }
+    channel.output.resize(outputQueueSize);
   }
 }
 
@@ -100,17 +124,19 @@ auto Stream::addHighShelfFilter(f64 cutoffFrequency, u32 order, f64 gain, f64 sl
 }
 
 auto Stream::pending() const -> bool {
-  return !_channels.empty() && _channels[0].resampler.pending();
+  return !_channels.empty() && _channels[0].output.pending();
 }
 
 auto Stream::read(f64 samples[]) -> u32 {
   for(u32 c : range(_channels.size())) {
-    samples[c] = _channels[c].resampler.read() * !muted();
+    samples[c] = _channels[c].output.read() * !muted();
   }
   return _channels.size();
 }
 
 auto Stream::write(const f64 samples[]) -> void {
+  bool resampling = _frequency != _resamplerFrequency;
+
   for(u32 c : range(_channels.size())) {
     f64 sample = samples[c] + 1e-25;  //constant offset used to suppress denormals
     for(auto& filter : _channels[c].filters) {
@@ -119,10 +145,22 @@ auto Stream::write(const f64 samples[]) -> void {
       case Filter::Mode::Biquad: sample = filter.biquad.process(sample); break;
       }
     }
-    for(auto& filter : _channels[c].nyquist) {
-      sample = filter.process(sample);
+    if(resampling) _channels[c].input[_resamplerInputSize] = sample;
+    else _channels[c].write(sample);
+  }
+
+  if(resampling && ++_resamplerInputSize == _resamplerBlockSize) {
+    u32 outputCount = 0;
+    for(u32 c : range(_channels.size())) {
+      f64* output = nullptr;
+      u32 count = _channels[c].resampler->process(
+        _channels[c].input.data(), _resamplerInputSize, output
+      );
+      if(c == 0) outputCount = count;
+      else assert(count == outputCount);
+      for(u32 n : range(count)) _channels[c].write(output[n]);
     }
-    _channels[c].resampler.write(sample);
+    _resamplerInputSize = 0;
   }
 
   //if there are samples pending, then alert the frontend to possibly process them.

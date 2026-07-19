@@ -30,6 +30,11 @@ struct Stream : Audio {
   }
 
 protected:
+  struct Resampler;
+  struct ResamplerDeleter {
+    auto operator()(Resampler* resampler) const -> void;
+  };
+
   struct Filter {
     enum class Mode : u32 { OnePole, Biquad } mode;
     enum class Type : u32 { None, LowPass, HighPass, LowShelf, HighShelf } type;
@@ -38,12 +43,17 @@ protected:
     DSP::IIR::Biquad biquad;
   };
   struct Channel {
+    auto write(f64 sample) -> void;
+
     std::vector<Filter> filters;
-    std::vector<DSP::IIR::Biquad> nyquist;
-    DSP::Resampler::Cubic resampler;
+    std::vector<f64> input;
+    queue<f64> output;
+    std::unique_ptr<Resampler, ResamplerDeleter> resampler;
   };
   std::vector<Channel> _channels;
   f64 _frequency = 48000.0;
   f64 _resamplerFrequency = 48000.0;
+  u32 _resamplerBlockSize = 0;
+  u32 _resamplerInputSize = 0;
   bool _muted = false;
 };

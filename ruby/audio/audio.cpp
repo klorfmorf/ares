@@ -59,7 +59,6 @@ auto Audio::setBlocking(bool blocking) -> bool {
   if(blocking == _blocking) return true;
   if(!hasBlocking()) return false;
   _blocking = blocking;
-  updateResampleFrequency(_frequency);
   clear();
   return true;
 }
@@ -72,7 +71,6 @@ auto Audio::setDynamic(bool dynamic) -> bool {
 }
 
 auto Audio::setChannels(u32 channels) -> bool {
-  updateResampleChannels(channels);
   if(channels == _channels) return true;
   if(!hasChannels(channels)) return false;
   _channels = channels;
@@ -83,7 +81,6 @@ auto Audio::setFrequency(u32 frequency) -> bool {
   if(frequency == _frequency) return true;
   if(!hasFrequency(frequency)) return false;
   _frequency = frequency;
-  updateResampleFrequency(_frequency);
   return initialize();
 }
 
@@ -194,18 +191,5 @@ auto Audio::initialize() -> bool {
       SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
   }
-
-auto Audio::updateResampleChannels(u32 channels) -> void {
-  if(_resamplers.size() != channels) {
-    _resamplers.clear();
-    _resamplers.resize(channels);
-    updateResampleFrequency(_frequency);
-    _resampleBuffer.resize(channels);
-  }
-}
-
-auto Audio::updateResampleFrequency(u32 frequency) -> void {
-  for(auto& resampler : _resamplers) resampler.reset(frequency);
-}
 
 }
